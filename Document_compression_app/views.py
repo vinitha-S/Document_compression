@@ -1,11 +1,12 @@
-
+import zlib
+import io
 import PyPDF2
 from django.http import HttpResponse
-import io
 from rest_framework.parsers import MultiPartParser
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from docx import Document
 
 
 class FileUploadAndCompressView(APIView):
@@ -14,7 +15,7 @@ class FileUploadAndCompressView(APIView):
     def post(self, request, format=None):
         if 'file' in request.data:
             uploaded_file = request.data['file']
-
+            file_extension = uploaded_file.name.lower().split('.')[-1]
             # Check the file type
             if uploaded_file.name.lower().endswith('.pdf'):
                 # Handle PDF file upload and compression
@@ -34,8 +35,34 @@ class FileUploadAndCompressView(APIView):
                 response = HttpResponse(compressed_pdf, content_type='application/pdf')
                 response['Content-Disposition'] = f'attachment; filename=compressed.pdf'
                 return response
+
+            # Get the file extension (e.g., ".pdf", ".pptx", ".docx"
+
+            if file_extension in ('pptx', 'docx'):
+                # Handle PDF, PPTX, and DOCX file compression
+                compressed_data = self.compress_file(uploaded_file.read())
+
+                # Create an in-memory file for the compressed data
+                compressed_file = io.BytesIO(compressed_data)
+                compressed_file.seek(0)
+
+                # Determine the content type based on the file extension
+                content_type = {
+                    'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                }.get(file_extension, 'application/octet-stream')
+
+                # Respond with the compressed file
+                response = HttpResponse(compressed_file, content_type=content_type)
+                response['Content-Disposition'] = f'attachment; filename=compressed.{file_extension}'
+                return response
             else:
-                return Response({'message': 'File uploaded successfully (but not a PDF)'},
+                # Handle other file types or actions
+                return Response({'message': f'File uploaded successfully ({file_extension} format)'},
                                 status=status.HTTP_201_CREATED)
         else:
             return Response({'error': 'Invalid or missing file.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    def compress_file(self, data):
+        # Compress data using zlib
+        return zlib.compress(data, level=zlib.Z_BEST_COMPRESSION)
